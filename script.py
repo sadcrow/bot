@@ -64,6 +64,10 @@ async def fetch_with_backoff(func, *args, max_retries=3, initial_delay=5):
                 raise
     raise Exception(f"Failed to execute {func.__name__} after {max_retries} retries due to rate limiting.")
 
+# --- User Access Control ---
+def is_authorized(user_id):
+    return str(user_id) in CHAT_IDS
+
 # --- Initialize Headers ---
 def initialize_headers():
     global headers
@@ -138,6 +142,13 @@ async def monitor_sheet(app_context: ContextTypes.DEFAULT_TYPE):
 
 # --- Force Scan Command ---
 async def force_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_authorized(user_id):
+        if hasattr(update, 'message') and update.message:
+            await update.message.reply_text("⛔️ Access denied. You are not authorized to use this bot.")
+        elif hasattr(update, 'callback_query') and update.callback_query:
+            await update.callback_query.answer("⛔️ Access denied. You are not authorized.", show_alert=True)
+        return
     global headers
     try:
         creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_FILE, SCOPE)
@@ -189,6 +200,10 @@ async def force_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- /start Command ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_authorized(user_id):
+        await update.message.reply_text("⛔️ Access denied. You are not authorized to use this bot.")
+        return
     keyboard = [
         [InlineKeyboardButton("Start Bot", callback_data='start_bot')],
         [InlineKeyboardButton("Stop Bot", callback_data='stop_bot')],
@@ -199,8 +214,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Button Handler ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global bot_running
+    user_id = update.effective_user.id
     query = update.callback_query
+    if not is_authorized(user_id):
+        await query.answer("⛔️ Access denied. You are not authorized.", show_alert=True)
+        return
+
+    global bot_running
     await query.answer()
 
     if query.data == "start_bot":
